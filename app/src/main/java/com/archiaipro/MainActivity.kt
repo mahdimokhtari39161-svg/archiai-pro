@@ -27,7 +27,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.archiaipro.data.ArchiDatabase
+import com.archiaipro.data.DesignEntity
 import com.archiaipro.data.ProjectEntity
+import com.archiaipro.reports.shareProjectPdf
+import com.archiaipro.threeD.Facade3DView
+import com.archiaipro.ui.PlanEditorScreen
+import androidx.compose.ui.viewinterop.AndroidView
+import org.json.JSONObject
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.util.Locale
@@ -53,39 +59,98 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun ArchiAIApp() {
     val context = LocalContext.current
-    val dao = remember { ArchiDatabase.get(context).projectDao() }
+    val database = remember { ArchiDatabase.get(context) }
+    val dao = database.projectDao()
+    val designDao = database.designDao()
     val projects by dao.observeAll().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     var page by remember { mutableStateOf("خانه") }
+    var activeProjectId by remember { mutableStateOf<Long?>(null) }
+    val activeProject = projects.firstOrNull { it.id == activeProjectId }
+    val designId = activeProjectId ?: -1L
+    val planDesign by designDao.observe(designId, "plan").collectAsState(initial = null)
+    val facadeDesign by designDao.observe(designId, "facade").collectAsState(initial = null)
+    val interiorDesign by designDao.observe(designId, "interior").collectAsState(initial = null)
 
     MaterialTheme(colorScheme = lightColorScheme(
         primary = Navy, secondary = Gold, background = Background, surface = Color.White
     )) {
         Surface(Modifier.fillMaxSize(), color = Background) {
             when (page) {
-                "خانه" -> DashboardScreen(projects.size) { page = it }
+                "خانه" -> DashboardScreen(projects.size) { destination ->
+                    when (destination) {
+                        "طراحی نمای سه‌بعدی", "طراحی داخلی", "پلان و اندازه‌گذاری" -> {
+                            if (activeProjectId == null) activeProjectId = projects.firstOrNull()?.id
+                            page = if (projects.isEmpty()) "مدیریت پروژه‌ها" else destination
+                        }
+                        else -> page = destination
+                    }
+                }
                 "مدیریت پروژه‌ها" -> ProjectsScreen(
                     projects = projects,
                     onBack = { page = "خانه" },
-                    onSave = { p -> scope.launch {
-                        if (p.id == 0L) dao.insert(p) else dao.update(p)
+                    onSave = { project -> scope.launch {
+                        if (project.id == 0L) dao.insert(project) else dao.update(project)
                     } },
-                    onDelete = { p -> scope.launch { dao.delete(p) } },
-                    onOpen = { page = "پروژه: ${it.name}" }
+                    onDelete = { project -> scope.launch { dao.delete(project) } },
+                    onOpen = { project -> activeProjectId = project.id; page = "پرونده پروژه" }
                 )
+                "پرونده پروژه" -> activeProject?.let { project ->
+                    ProjectWorkspaceScreen(
+                        project = project,
+                        onBack = { page = "مدیریت پروژه‌ها" },
+                        onPlan = { page = "پلان و اندازه‌گذاری" },
+                        onFacade = { page = "طراحی نمای سه‌بعدی" },
+                        onInterior = { page = "طراحی داخلی" },
+                        onReport = { page = "گزارش و خروجی" }
+                    )
+                } ?: run { page = "مدیریت پروژه‌ها" }
+                "پلان و اندازه‌گذاری" -> activeProject?.let { project ->
+                    PlanEditorScreen(
+                        projectId = project.id,
+                        initial = planDesign,
+                        onBack = { page = "پرونده پروژه" },
+                        onSave = { json -> scope.launch {
+                            designDao.save(DesignEntity(
+                                projectId = project.id, kind = "plan",
+                                title = "پلان ${project.name}", payloadJson = json
+                            ))
+                        } }
+                    )
+                } ?: run { page = "مدیریت پروژه‌ها" }
+                "طراحی نمای سه‌بعدی" -> activeProject?.let { project ->
+                    FacadeDesignerScreen(
+                        project = project,
+                        initial = facadeDesign,
+                        onBack = { page = "پرونده پروژه" },
+                        onSave = { json -> scope.launch {
+                            designDao.save(DesignEntity(
+                                projectId = project.id, kind = "facade",
+                                title = "نمای ${project.name}", payloadJson = json
+                            ))
+                        } }
+                    )
+                } ?: run { page = "مدیریت پروژه‌ها" }
+                "طراحی داخلی" -> activeProject?.let { project ->
+                    InteriorDesignerScreen(
+                        project = project,
+                        initial = interiorDesign,
+                        onBack = { page = "پرونده پروژه" },
+                        onSave = { json -> scope.launch {
+                            designDao.save(DesignEntity(
+                                projectId = project.id, kind = "interior",
+                                title = "طراحی داخلی ${project.name}", payloadJson = json
+                            ))
+                        } }
+                    )
+                } ?: run { page = "مدیریت پروژه‌ها" }
                 "محاسبات مصالح", "برآورد هزینه" -> CalculatorScreen(page) { page = "خانه" }
                 "کتابخانه متریال" -> MaterialsScreen { page = "خانه" }
-                "طراحی نمای سه‌بعدی" -> FacadeScreen { page = "خانه" }
-                "طراحی داخلی" -> InteriorScreen { page = "خانه" }
-                "پلان و اندازه‌گذاری" -> PlanScreen { page = "خانه" }
-                "گزارش و خروجی" -> ReportScreen(projects) { page = "خانه" }
+                "گزارش و خروجی" -> PdfReportScreen(projects) {
+                    page = if (activeProject != null) "پرونده پروژه" else "خانه"
+                }
                 "دستیار هوشمند" -> AssistantScreen { page = "خانه" }
-                else -> ProjectDetailScreen(
-                    title = page.removePrefix("پروژه: "),
-                    projects = projects,
-                    onBack = { page = "مدیریت پروژه‌ها" },
-                    onReport = { page = "گزارش و خروجی" }
-                )
+                else -> DashboardScreen(projects.size) { page = it }
             }
         }
     }
@@ -434,6 +499,167 @@ fun AssistantScreen(onBack: () -> Unit) {
         Spacer(Modifier.height(10.dp))
         Button(onClick = { question = "" }, enabled = question.isNotBlank()) { Text("پاک‌کردن پرسش") }
         Text("برای طراحی دقیق، ابتدا نوع ساختمان، اقلیم، ابعاد، بودجه و نیازهای کارفرما را مشخص کنید. سپس پلان، سازه، پوسته و تأسیسات را هماهنگ پیش ببرید.", color = Ink, lineHeight = 25.sp)
+    }
+}
+
+@Composable
+private fun ProjectWorkspaceScreen(
+    project: ProjectEntity,
+    onBack: () -> Unit,
+    onPlan: () -> Unit,
+    onFacade: () -> Unit,
+    onInterior: () -> Unit,
+    onReport: () -> Unit
+) {
+    PageFrame("پرونده پروژه", onBack) {
+        Text(project.name, color = Navy, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("${project.type}  •  ${project.area} مترمربع", color = Muted)
+        if (project.location.isNotBlank()) Text(project.location, color = Muted)
+        if (project.description.isNotBlank()) Text(project.description, color = Ink)
+        Spacer(Modifier.height(12.dp))
+        WorkspaceAction("ویرایشگر پلان دوبعدی", "ترسیم دیوار، در و پنجره و ذخیره در همین پروژه", onPlan)
+        WorkspaceAction("مدل سه‌بعدی نمای ساختمان", "چرخاندن مدل و تغییر متریال اجزای نما", onFacade)
+        WorkspaceAction("طراحی داخلی", "انتخاب فضای اتاق، رنگ دیوار و کف‌پوش", onInterior)
+        WorkspaceAction("گزارش PDF", "خروجی پرونده پروژه‌ها", onReport)
+    }
+}
+
+@Composable
+private fun WorkspaceAction(title: String, detail: String, onClick: () -> Unit) {
+    Card(Modifier.fillMaxWidth().padding(bottom = 10.dp).clickable(onClick = onClick)) {
+        Column(Modifier.padding(15.dp)) {
+            Text(title, color = Navy, fontWeight = FontWeight.Bold)
+            Text(detail, color = Muted, fontSize = 11.sp)
+        }
+    }
+}
+
+@Composable
+private fun FacadeDesignerScreen(
+    project: ProjectEntity,
+    initial: DesignEntity?,
+    onBack: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val model = remember { Facade3DView(context) }
+    val sections = listOf("بدنه اصلی", "ستون چپ", "ستون راست", "تاج نما", "پایین نما")
+    val materials = listOf("سفید", "کرم", "طوسی", "ذغالی", "بژ")
+    var section by remember { mutableIntStateOf(0) }
+    var material by remember { mutableIntStateOf(0) }
+    LaunchedEffect(initial?.payloadJson) {
+        val saved = runCatching { JSONObject(initial?.payloadJson ?: "{}") }.getOrNull()
+        if (saved != null) {
+            for (i in 0..4) model.setSectionMaterial(i, saved.optInt("color$i", 0))
+            material = saved.optInt("color0", 0)
+        }
+    }
+    Column(Modifier.fillMaxSize().padding(14.dp)) {
+        OutlinedButton(onClick = onBack) { Text("بازگشت به پرونده پروژه") }
+        Text("مدل سه‌بعدی نمای ساختمان", color = Navy, fontWeight = FontWeight.Bold, fontSize = 21.sp)
+        Text(project.name, color = Muted)
+        AndroidView(factory = { model }, modifier = Modifier.fillMaxWidth().weight(1f).padding(vertical = 8.dp))
+        Text("مدل را با کشیدن انگشت بچرخانید.", color = Muted, fontSize = 11.sp)
+        Text("بخش نما", color = Ink, fontWeight = FontWeight.Bold)
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            sections.forEachIndexed { i, label ->
+                FilterChip(selected = section == i, onClick = { section = i }, label = { Text(label, fontSize = 9.sp) })
+            }
+        }
+        Text("متریال", color = Ink, fontWeight = FontWeight.Bold)
+        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            materials.forEachIndexed { i, label ->
+                FilterChip(selected = material == i, onClick = {
+                    material = i
+                    model.setSectionMaterial(section, i)
+                }, label = { Text(label, fontSize = 10.sp) })
+            }
+        }
+        Button(onClick = {
+            val json = JSONObject()
+            for (i in 0..4) {
+                val savedColor = runCatching { JSONObject(initial?.payloadJson ?: "{}").optInt("color$i", 0) }.getOrDefault(0)
+                json.put("color$i", if (i == section) material else savedColor)
+            }
+            onSave(json.toString())
+        }, modifier = Modifier.fillMaxWidth()) { Text("ذخیره طرح نما در پروژه") }
+        Text("مدل حجمی سه‌بعدی و قابل چرخش است. بافت تصویری سنگ و جزئیات اجرایی پیشرفته هنوز تکمیل نشده‌اند.", color = Muted, fontSize = 10.sp)
+    }
+}
+
+@Composable
+private fun InteriorDesignerScreen(
+    project: ProjectEntity,
+    initial: DesignEntity?,
+    onBack: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    val saved = remember(initial?.payloadJson) {
+        runCatching { JSONObject(initial?.payloadJson ?: "{}") }.getOrDefault(JSONObject())
+    }
+    var room by remember(initial?.payloadJson) { mutableStateOf(saved.optString("room", "نشیمن")) }
+    var wall by remember(initial?.payloadJson) { mutableStateOf(saved.optString("wall", "سفید گرم")) }
+    var floor by remember(initial?.payloadJson) { mutableStateOf(saved.optString("floor", "چوب روشن")) }
+    var furniture by remember(initial?.payloadJson) { mutableStateOf(saved.optBoolean("furniture", true)) }
+    val wallColors = mapOf(
+        "سفید گرم" to Color(0xFFF0ECE4), "طوسی روشن" to Color(0xFFD4D8DC),
+        "کرم" to Color(0xFFE9D7B9), "سبز ملایم" to Color(0xFFD4E0D2),
+        "آبی خاکستری" to Color(0xFFD5E0E8)
+    )
+    val floorColors = mapOf(
+        "چوب روشن" to Color(0xFFB78C62), "سنگ کرم" to Color(0xFFD0C3AE),
+        "سرامیک طوسی" to Color(0xFF9DA5AD), "پارکت تیره" to Color(0xFF60432F)
+    )
+    PageFrame("طراحی داخلی پروژه", onBack) {
+        Text(project.name, color = Muted)
+        Text("فضای مورد نظر", color = Ink, fontWeight = FontWeight.Bold)
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            listOf("نشیمن", "خواب", "آشپزخانه", "اداری").forEach {
+                FilterChip(selected = room == it, onClick = { room = it }, label = { Text(it, fontSize = 10.sp) })
+            }
+        }
+        Text("رنگ دیوار", color = Ink, fontWeight = FontWeight.Bold)
+        listOf("سفید گرم", "طوسی روشن", "کرم", "سبز ملایم", "آبی خاکستری").forEach {
+            FilterChip(selected = wall == it, onClick = { wall = it }, label = { Text(it) })
+        }
+        Text("کف‌پوش", color = Ink, fontWeight = FontWeight.Bold)
+        listOf("چوب روشن", "سنگ کرم", "سرامیک طوسی", "پارکت تیره").forEach {
+            FilterChip(selected = floor == it, onClick = { floor = it }, label = { Text(it) })
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = furniture, onCheckedChange = { furniture = it })
+            Text("نمایش مبلمان شماتیک")
+        }
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(14.dp)) {
+                Text("پیش‌نمایش اتاق", color = Navy, fontWeight = FontWeight.Bold)
+                Box(Modifier.fillMaxWidth().height(190.dp).background(wallColors[wall] ?: Color.White)) {
+                    Box(Modifier.fillMaxWidth().height(42.dp).align(Alignment.BottomCenter).background(floorColors[floor] ?: Color.LightGray))
+                    if (furniture) {
+                        Box(Modifier.width(125.dp).height(42.dp).align(Alignment.BottomCenter).padding(bottom = 5.dp).background(Color(0xFF9A7658), RoundedCornerShape(8.dp)))
+                        Box(Modifier.width(38.dp).height(70.dp).align(Alignment.BottomStart).padding(start = 10.dp, bottom = 45.dp).background(Color(0xFF8A9AA5), RoundedCornerShape(5.dp)))
+                    }
+                }
+                Text("$room  •  دیوار: $wall  •  کف: $floor", color = Muted, fontSize = 11.sp)
+            }
+        }
+        Button(onClick = {
+            onSave(JSONObject().put("room", room).put("wall", wall).put("floor", floor).put("furniture", furniture).toString())
+        }, modifier = Modifier.fillMaxWidth()) { Text("ذخیره طراحی داخلی") }
+        Text("انتخاب‌ها در پرونده همین پروژه ذخیره می‌شوند؛ چیدمان دقیق و مدل سه‌بعدی مبلمان در توسعه بعدی قرار دارد.", color = Muted, fontSize = 10.sp)
+    }
+}
+
+@Composable
+private fun PdfReportScreen(projects: List<ProjectEntity>, onBack: () -> Unit) {
+    val context = LocalContext.current
+    PageFrame("گزارش PDF", onBack) {
+        Text("گزارش PDF از مشخصات ثبت‌شده پروژه‌ها تولید می‌شود و می‌توانید آن را ذخیره یا ارسال کنید.", color = Muted)
+        ResultTile("تعداد پروژه‌ها", projects.size.toString())
+        Button(onClick = { shareProjectPdf(context, projects) }, modifier = Modifier.fillMaxWidth()) {
+            Text("ساخت و اشتراک PDF")
+        }
+        Text("در حال حاضر گزارش شامل مشخصات اصلی پروژه‌هاست؛ نقشه‌ها و تصاویر طراحی در PDF قرار نمی‌گیرند.", color = Muted, fontSize = 11.sp)
     }
 }
 
