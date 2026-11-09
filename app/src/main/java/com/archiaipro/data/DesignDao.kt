@@ -11,8 +11,14 @@ interface DesignDao {
     @Query("SELECT * FROM designs WHERE projectId = :projectId AND kind = :kind LIMIT 1")
     fun observe(projectId: Long, kind: String): Flow<DesignEntity?>
 
+    @Query("SELECT * FROM designs")
+    suspend fun getAll(): List<DesignEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun save(design: DesignEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun restoreAll(designs: List<DesignEntity>)
 
     @Query("DELETE FROM designs WHERE projectId = :projectId AND kind = :kind")
     suspend fun delete(projectId: Long, kind: String)

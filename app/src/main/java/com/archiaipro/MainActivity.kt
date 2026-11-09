@@ -2,6 +2,7 @@ package com.archiaipro
 
 import android.content.Intent
 import android.content.Context
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -28,6 +29,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.archiaipro.data.ArchiDatabase
+import com.archiaipro.backup.BackupScreen
 import com.archiaipro.data.DesignEntity
 import com.archiaipro.data.ProjectEntity
 import com.archiaipro.reports.shareProjectPdf
@@ -60,6 +62,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun ArchiAIApp() {
     val context = LocalContext.current
+    val settings = remember { context.getSharedPreferences("archiai_settings", Context.MODE_PRIVATE) }
+    var language by remember { mutableStateOf(settings.getString("language", "fa") ?: "fa") }
     val database = remember { ArchiDatabase.get(context) }
     val dao = database.projectDao()
     val designDao = database.designDao()
@@ -78,8 +82,10 @@ fun ArchiAIApp() {
     )) {
         Surface(Modifier.fillMaxSize(), color = Background) {
             when (page) {
-                "خانه" -> DashboardScreen(projects.size) { destination ->
+                "خانه" -> DashboardScreen(projects.size, language) { destination ->
                     when (destination) {
+                        "زبان برنامه" -> page = "زبان برنامه"
+                        "پشتیبان‌گیری" -> page = "پشتیبان‌گیری"
                         "طراحی نمای سه‌بعدی", "طراحی داخلی", "پلان و اندازه‌گذاری" -> {
                             if (activeProjectId == null) activeProjectId = projects.firstOrNull()?.id
                             page = if (projects.isEmpty()) "مدیریت پروژه‌ها" else destination
@@ -87,6 +93,19 @@ fun ArchiAIApp() {
                         else -> page = destination
                     }
                 }
+                "زبان برنامه" -> LanguageSettingsScreen(
+                    language = language,
+                    onSelect = { selected ->
+                        language = selected
+                        settings.edit().putString("language", selected).apply()
+                    },
+                    onBack = { page = "خانه" }
+                )
+                "پشتیبان‌گیری" -> BackupScreen(
+                    projects = dao,
+                    designs = designDao,
+                    onBack = { page = "خانه" }
+                )
                 "مدیریت پروژه‌ها" -> ProjectsScreen(
                     projects = projects,
                     onBack = { page = "خانه" },
@@ -215,7 +234,8 @@ fun DashboardScreen(projectCount: Int, language: String = "fa", onOpen: (String)
             "برآورد هزینه" to "محاسبه هزینه بر اساس نرخ ورودی",
             "گزارش و خروجی" to "ساخت گزارش قابل اشتراک",
             "دستیار هوشمند" to "راهنمای مراحل طراحی",
-            "زبان برنامه" to "فارسی، عربی و انگلیسی"
+            "زبان برنامه" to "فارسی، عربی و انگلیسی",
+            "پشتیبان‌گیری" to "خروجی و بازیابی فایل پروژه"
         )
         tools.chunked(2).forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
