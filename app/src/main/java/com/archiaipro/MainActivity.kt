@@ -1,14 +1,18 @@
 
 package com.archiaipro
 
+import android.content.Context
 import android.os.Bundle
+import org.json.JSONArray
+import org.json.JSONObject
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -16,27 +20,72 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 private val Navy = Color(0xFF142238)
-private val NavyLight = Color(0xFF243B59)
 private val Gold = Color(0xFFD8B477)
 private val Background = Color(0xFFF3F5F8)
 private val Ink = Color(0xFF1C293B)
 private val Muted = Color(0xFF8290A2)
 
+data class Project(
+    val id: Long,
+    val name: String,
+    val type: String,
+    val description: String
+)
+
+private fun loadProjects(context: Context): List<Project> {
+    val prefs = context.getSharedPreferences("archiai_data", Context.MODE_PRIVATE)
+    val result = mutableListOf<Project>()
+
+    return try {
+        val array = JSONArray(prefs.getString("projects", "[]"))
+        for (i in 0 until array.length()) {
+            val item = array.getJSONObject(i)
+            result.add(
+                Project(
+                    id = item.optLong("id"),
+                    name = item.optString("name"),
+                    type = item.optString("type"),
+                    description = item.optString("description")
+                )
+            )
+        }
+        result
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
+
+private fun saveProjects(context: Context, projects: List<Project>) {
+    val array = JSONArray()
+
+    projects.forEach { project ->
+        val item = JSONObject()
+        item.put("id", project.id)
+        item.put("name", project.name)
+        item.put("type", project.type)
+        item.put("description", project.description)
+        array.put(item)
+    }
+
+    context.getSharedPreferences("archiai_data", Context.MODE_PRIVATE)
+        .edit()
+        .putString("projects", array.toString())
+        .apply()
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         setContent {
             CompositionLocalProvider(
-                LocalLayoutDirection provides LayoutDirection.Rtl
+                androidx.compose.ui.platform.LocalLayoutDirection provides
+                    androidx.compose.ui.unit.LayoutDirection.Rtl
             ) {
                 ArchiAIApp()
             }
@@ -46,7 +95,14 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun ArchiAIApp() {
+    val context = LocalContext.current
+    val projects = remember { mutableStateListOf<Project>() }
+
     var selectedFeature by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        projects.addAll(loadProjects(context))
+    }
 
     MaterialTheme(
         colorScheme = lightColorScheme(
@@ -60,12 +116,31 @@ fun ArchiAIApp() {
             modifier = Modifier.fillMaxSize(),
             color = Background
         ) {
-            if (selectedFeature == null) {
-                DashboardScreen(
-                    onOpenFeature = { selectedFeature = it }
+            when (selectedFeature) {
+                null -> DashboardScreen(
+                    projectCount = projects.size,
+                    onOpen = { selectedFeature = it }
                 )
-            } else {
-                FeatureScreen(
+
+                "مدیریت پروژه‌ها" -> ProjectManagerScreen(
+                    projects = projects,
+                    onBack = { selectedFeature = null },
+                    onSave = { project ->
+                        val index = projects.indexOfFirst { it.id == project.id }
+                        if (index >= 0) {
+                            projects[index] = project
+                        } else {
+                            projects.add(project)
+                        }
+                        saveProjects(context, projects)
+                    },
+                    onDelete = { project ->
+                        projects.removeAll { it.id == project.id }
+                        saveProjects(context, projects)
+                    }
+                )
+
+                else -> FeatureScreen(
                     title = selectedFeature ?: "",
                     onBack = { selectedFeature = null }
                 )
@@ -75,15 +150,16 @@ fun ArchiAIApp() {
 }
 
 @Composable
-fun DashboardScreen(onOpenFeature: (String) -> Unit) {
+fun DashboardScreen(
+    projectCount: Int,
+    onOpen: (String) -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 18.dp, vertical = 16.dp)
+            .padding(18.dp)
     ) {
-
-        // Header
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -92,94 +168,65 @@ fun DashboardScreen(onOpenFeature: (String) -> Unit) {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "ArchiAI",
-                        fontSize = 25.sp,
+                        "ArchiAI",
+                        fontSize = 26.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = Navy
                     )
                     Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = "PRO",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Gold
-                    )
+                    Text("PRO", color = Gold, fontWeight = FontWeight.Bold)
                 }
-                Text(
-                    text = "استودیوی هوشمند معماری",
-                    fontSize = 12.sp,
-                    color = Muted
-                )
+                Text("استودیوی هوشمند معماری", color = Muted, fontSize = 12.sp)
             }
 
             Surface(
                 color = Navy,
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.size(48.dp)
+                shape = RoundedCornerShape(15.dp),
+                modifier = Modifier.size(50.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "A",
-                        color = Gold,
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Text("A", color = Gold, fontSize = 28.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
 
         Spacer(Modifier.height(22.dp))
 
-        // Hero panel
         Surface(
             color = Navy,
-            shape = RoundedCornerShape(26.dp),
+            shape = RoundedCornerShape(24.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(
-                modifier = Modifier.padding(22.dp)
-            ) {
+            Column(Modifier.padding(22.dp)) {
                 Text(
-                    text = "طراحی معماری،\nبا دیدی فراتر از امروز",
-                    fontSize = 23.sp,
-                    lineHeight = 32.sp,
+                    "طراحی معماری،\nبا دیدی فراتر از امروز",
+                    fontSize = 24.sp,
+                    lineHeight = 34.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
-
                 Spacer(Modifier.height(10.dp))
-
                 Text(
-                    text = "فضا را خلق کن، متریال را انتخاب کن و ایده‌هایت را به پروژه تبدیل کن.",
+                    "پروژه‌های معماری خود را ایجاد کن، ذخیره کن و توسعه بده.",
+                    color = Color(0xFFD0D8E3),
                     fontSize = 13.sp,
-                    lineHeight = 22.sp,
-                    color = Color(0xFFD0D8E3)
+                    lineHeight = 23.sp
                 )
-
-                Spacer(Modifier.height(19.dp))
-
+                Spacer(Modifier.height(17.dp))
                 Button(
-                    onClick = { onOpenFeature("طراحی نمای سه‌بعدی") },
+                    onClick = { onOpen("مدیریت پروژه‌ها") },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Gold,
                         contentColor = Navy
-                    ),
-                    shape = RoundedCornerShape(13.dp)
-                ) {
-                    Text(
-                        text = "شروع طراحی",
-                        fontWeight = FontWeight.Bold
                     )
-                    Spacer(Modifier.width(8.dp))
-                    Text("←")
+                ) {
+                    Text("شروع یک پروژه جدید", fontWeight = FontWeight.Bold)
                 }
-
                 Spacer(Modifier.height(8.dp))
-
                 Text(
-                    text = "OFFLINE FIRST  •  ARCHITECTURE STUDIO",
-                    fontSize = 9.sp,
+                    "OFFLINE FIRST  •  ARCHITECTURE STUDIO",
                     color = Gold,
+                    fontSize = 9.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -187,296 +234,327 @@ fun DashboardScreen(onOpenFeature: (String) -> Unit) {
 
         Spacer(Modifier.height(24.dp))
 
-        // Projects section
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "فضای کاری من",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Ink
-            )
-            Text(
-                text = "مدیریت پروژه‌ها",
-                fontSize = 11.sp,
-                color = Muted
-            )
-        }
-
-        Spacer(Modifier.height(12.dp))
+        Text("فضای کاری من", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Ink)
+        Spacer(Modifier.height(10.dp))
 
         Surface(
             color = Color.White,
             shape = RoundedCornerShape(18.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable {
-                    onOpenFeature("مدیریت پروژه‌ها")
-                }
+                .clickable { onOpen("مدیریت پروژه‌ها") }
         ) {
             Row(
-                modifier = Modifier.padding(17.dp),
+                Modifier.padding(18.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Surface(
-                    color = Color(0xFFF1E8D9),
-                    shape = RoundedCornerShape(13.dp),
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text("▤", fontSize = 25.sp, color = Navy)
-                    }
+                Text("▤", fontSize = 30.sp, color = Gold)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("مدیریت پروژه‌ها", fontWeight = FontWeight.Bold, color = Ink)
+                    Text("$projectCount پروژه ذخیره‌شده", color = Muted, fontSize = 12.sp)
                 }
-
-                Spacer(Modifier.width(13.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "پروژه‌های معماری",
-                        fontWeight = FontWeight.Bold,
-                        color = Ink,
-                        fontSize = 14.sp
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "ایجاد، ذخیره و مدیریت طرح‌ها",
-                        color = Muted,
-                        fontSize = 11.sp
-                    )
-                }
-
-                Text("←", fontSize = 19.sp, color = Gold)
+                Text("←", color = Gold, fontSize = 22.sp)
             }
         }
 
         Spacer(Modifier.height(25.dp))
-
-        // Tools section
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "ابزارهای تخصصی",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Ink
-            )
-            Text(
-                text = "۸ ابزار",
-                fontSize = 11.sp,
-                color = Muted
-            )
-        }
-
-        Spacer(Modifier.height(13.dp))
-
-        // First row
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FeatureCard(
-                title = "طراحی نمای سه‌بعدی",
-                subtitle = "مدل‌سازی و انتخاب سنگ",
-                symbol = "◇",
-                modifier = Modifier.weight(1f)
-            ) { onOpenFeature("طراحی نمای سه‌بعدی") }
-
-            FeatureCard(
-                title = "طراحی داخلی",
-                subtitle = "چیدمان و دکوراسیون",
-                symbol = "⌂",
-                modifier = Modifier.weight(1f)
-            ) { onOpenFeature("طراحی داخلی") }
-        }
-
+        Text("ابزارهای تخصصی", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Ink)
         Spacer(Modifier.height(12.dp))
 
-        // Second row
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FeatureCard(
-                title = "کتابخانه متریال",
-                subtitle = "سنگ، چوب، شیشه و...",
-                symbol = "▧",
-                modifier = Modifier.weight(1f)
-            ) { onOpenFeature("کتابخانه متریال") }
+        val features = listOf(
+            "طراحی نمای سه‌بعدی" to "مدل‌سازی و انتخاب سنگ",
+            "طراحی داخلی" to "چیدمان و دکوراسیون",
+            "کتابخانه متریال" to "سنگ، چوب، شیشه و فلز",
+            "پلان و اندازه‌گذاری" to "ترسیم و اندازه‌ها",
+            "محاسبات مصالح" to "مساحت و حجم",
+            "برآورد هزینه" to "مدیریت هزینه پروژه",
+            "گزارش و خروجی" to "گزارش پروژه",
+            "دستیار هوشمند" to "ایده‌پردازی معماری"
+        )
 
-            FeatureCard(
-                title = "پلان و اندازه‌گذاری",
-                subtitle = "ترسیم و اندازه‌ها",
-                symbol = "▦",
-                modifier = Modifier.weight(1f)
-            ) { onOpenFeature("پلان و اندازه‌گذاری") }
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // Third row
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FeatureCard(
-                title = "محاسبات مصالح",
-                subtitle = "مساحت و حجم",
-                symbol = "∑",
-                modifier = Modifier.weight(1f)
-            ) { onOpenFeature("محاسبات مصالح") }
-
-            FeatureCard(
-                title = "برآورد هزینه",
-                subtitle = "مدیریت هزینه پروژه",
-                symbol = "₮",
-                modifier = Modifier.weight(1f)
-            ) { onOpenFeature("برآورد هزینه") }
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // Fourth row
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FeatureCard(
-                title = "گزارش و خروجی",
-                subtitle = "PDF و تصاویر",
-                symbol = "▤",
-                modifier = Modifier.weight(1f)
-            ) { onOpenFeature("گزارش و خروجی") }
-
-            FeatureCard(
-                title = "دستیار هوشمند",
-                subtitle = "ایده‌پردازی معماری",
-                symbol = "✦",
-                modifier = Modifier.weight(1f)
-            ) { onOpenFeature("دستیار هوشمند") }
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        // Footer
-        Surface(
-            color = Color(0xFFE9EDF3),
-            shape = RoundedCornerShape(15.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier.padding(15.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+        features.chunked(2).forEach { row ->
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text(
-                    text = "ARCHIAI PRO",
-                    color = Navy,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 13.sp
-                )
-                Spacer(Modifier.height(5.dp))
-                Text(
-                    text = "استودیوی طراحی حرفه‌ای معماری",
-                    fontSize = 11.sp,
-                    color = Muted
-                )
+                row.forEach { feature ->
+                    Surface(
+                        color = Color.White,
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(115.dp)
+                            .clickable { onOpen(feature.first) }
+                    ) {
+                        Column(Modifier.padding(14.dp)) {
+                            Text("◇", color = Gold, fontSize = 25.sp)
+                            Spacer(Modifier.height(7.dp))
+                            Text(feature.first, color = Ink, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text(feature.second, color = Muted, fontSize = 10.sp)
+                        }
+                    }
+                }
+                if (row.size == 1) {
+                    Spacer(Modifier.weight(1f))
+                }
             }
+            Spacer(Modifier.height(12.dp))
         }
 
         Spacer(Modifier.height(20.dp))
+        Text(
+            "ARCHIAI PRO • استودیوی طراحی حرفه‌ای معماری",
+            color = Muted,
+            fontSize = 11.sp,
+            modifier = Modifier.align(Alignment.CenterHorizontally)
+        )
     }
 }
 
 @Composable
-fun FeatureCard(
-    title: String,
-    subtitle: String,
-    symbol: String,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
+fun ProjectManagerScreen(
+    projects: List<Project>,
+    onBack: () -> Unit,
+    onSave: (Project) -> Unit,
+    onDelete: (Project) -> Unit
 ) {
-    Surface(
-        color = Color.White,
-        shape = RoundedCornerShape(19.dp),
-        shadowElevation = 2.dp,
-        modifier = modifier
-            .heightIn(min = 140.dp)
-            .clickable { onClick() }
+    var showDialog by remember { mutableStateOf(false) }
+    var editingProject by remember { mutableStateOf<Project?>(null) }
+    var deletingProject by remember { mutableStateOf<Project?>(null) }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(18.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(14.dp)
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(
-                color = Color(0xFFF1E9DC),
-                shape = RoundedCornerShape(13.dp),
-                modifier = Modifier.size(42.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = symbol,
-                        fontSize = 24.sp,
-                        color = Navy
-                    )
-                }
+            OutlinedButton(onClick = onBack) {
+                Text("بازگشت")
             }
-
-            Spacer(Modifier.height(12.dp))
-
+            Spacer(Modifier.width(12.dp))
             Text(
-                text = title,
-                fontSize = 13.sp,
+                "مدیریت پروژه‌ها",
+                fontSize = 21.sp,
                 fontWeight = FontWeight.Bold,
-                color = Ink
-            )
-
-            Spacer(Modifier.height(5.dp))
-
-            Text(
-                text = subtitle,
-                fontSize = 10.sp,
-                color = Muted
+                color = Navy
             )
         }
+
+        Spacer(Modifier.height(18.dp))
+
+        Button(
+            onClick = {
+                editingProject = null
+                showDialog = true
+            },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = Navy)
+        ) {
+            Text("+ ایجاد پروژه جدید", color = Color.White)
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        if (projects.isEmpty()) {
+            Box(
+                Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("▤", fontSize = 48.sp, color = Gold)
+                    Spacer(Modifier.height(12.dp))
+                    Text("هنوز پروژه‌ای ثبت نشده است", color = Ink, fontWeight = FontWeight.Bold)
+                    Text("برای شروع، پروژه جدید بسازید.", color = Muted, fontSize = 12.sp)
+                }
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                items(projects, key = { it.id }) { project ->
+                    Surface(
+                        color = Color.White,
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text(project.name, fontWeight = FontWeight.Bold, color = Navy, fontSize = 16.sp)
+                            Spacer(Modifier.height(5.dp))
+                            Text("نوع ساختمان: ${project.type}", color = Muted, fontSize = 12.sp)
+                            if (project.description.isNotBlank()) {
+                                Spacer(Modifier.height(6.dp))
+                                Text(project.description, color = Ink, fontSize = 12.sp)
+                            }
+                            Spacer(Modifier.height(12.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(
+                                    onClick = {
+                                        editingProject = project
+                                        showDialog = true
+                                    }
+                                ) {
+                                    Text("ویرایش")
+                                }
+                                OutlinedButton(
+                                    onClick = { deletingProject = project },
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red)
+                                ) {
+                                    Text("حذف")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showDialog) {
+        ProjectDialog(
+            project = editingProject,
+            onDismiss = { showDialog = false },
+            onSave = {
+                onSave(it)
+                showDialog = false
+            }
+        )
+    }
+
+    deletingProject?.let { project ->
+        AlertDialog(
+            onDismissRequest = { deletingProject = null },
+            title = { Text("حذف پروژه") },
+            text = { Text("آیا از حذف پروژه «${project.name}» مطمئن هستید؟") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDelete(project)
+                    deletingProject = null
+                }) {
+                    Text("حذف", color = Color.Red)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingProject = null }) {
+                    Text("انصراف")
+                }
+            }
+        )
     }
 }
 
 @Composable
-fun FeatureScreen(
-    title: String,
-    onBack: () -> Unit
+fun ProjectDialog(
+    project: Project?,
+    onDismiss: () -> Unit,
+    onSave: (Project) -> Unit
 ) {
+    var name by remember(project?.id) { mutableStateOf(project?.name ?: "") }
+    var type by remember(project?.id) { mutableStateOf(project?.type ?: "مسکونی") }
+    var description by remember(project?.id) { mutableStateOf(project?.description ?: "") }
+
+    val types = listOf("مسکونی", "تجاری", "اداری", "ویلایی", "داخلی", "سایر")
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (project == null) "ایجاد پروژه" else "ویرایش پروژه") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 450.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("نام پروژه") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(Modifier.height(12.dp))
+                Text("نوع ساختمان", fontWeight = FontWeight.Bold, color = Ink)
+                Spacer(Modifier.height(6.dp))
+
+                types.forEach { option ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { type = option }
+                            .padding(vertical = 3.dp)
+                    ) {
+                        RadioButton(
+                            selected = type == option,
+                            onClick = { type = option }
+                        )
+                        Text(option, color = Ink)
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("توضیحات پروژه") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = name.isNotBlank(),
+                onClick = {
+                    onSave(
+                        Project(
+                            id = project?.id ?: System.currentTimeMillis(),
+                            name = name.trim(),
+                            type = type,
+                            description = description.trim()
+                        )
+                    )
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Navy)
+            ) {
+                Text("ذخیره")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("انصراف")
+            }
+        }
+    )
+}
+
+@Composable
+fun FeatureScreen(title: String, onBack: () -> Unit) {
     Column(
-        modifier = Modifier
+        Modifier
             .fillMaxSize()
-            .background(Background)
             .padding(20.dp)
     ) {
         OutlinedButton(onClick = onBack) {
             Text("بازگشت به داشبورد")
         }
-
-        Spacer(Modifier.height(28.dp))
-
-        Text(
-            text = title,
-            fontSize = 25.sp,
-            fontWeight = FontWeight.Bold,
-            color = Navy
-        )
-
-        Spacer(Modifier.height(14.dp))
-
+        Spacer(Modifier.height(25.dp))
+        Text(title, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Navy)
+        Spacer(Modifier.height(15.dp))
         Surface(
             color = Color.White,
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(18.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(Modifier.padding(20.dp)) {
+                Text("این ابزار در حال توسعه است.", fontWeight = FontWeight.Bold, color = Ink)
+                Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "به فضای کاری $title خوش آمدید.",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Ink
-                )
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = "ساختار این بخش آماده است. ابزارها و امکانات تخصصی آن در مراحل بعدی به برنامه اضافه خواهند شد.",
+                    "امکانات تخصصی این بخش در مراحل بعدی به برنامه اضافه خواهند شد.",
+                    color = Muted,
                     fontSize = 13.sp,
-                    lineHeight = 23.sp,
-                    color = Muted
+                    lineHeight = 23.sp
                 )
             }
         }
