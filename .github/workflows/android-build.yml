@@ -43,9 +43,16 @@ jobs:
           sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
       - name: Build Debug APK
-        run: ./gradlew --no-daemon assembleDebug
+        run: |
+          ./gradlew --no-daemon assembleDebug --stacktrace --info
+
+      - name: Save Manifest diagnostic report
+        if: always()
+        run: |
+          find app/build/outputs/logs -type f -name '*manifest*' -print -exec cat {} \; || true
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: ArchiAI-Pro-APK
