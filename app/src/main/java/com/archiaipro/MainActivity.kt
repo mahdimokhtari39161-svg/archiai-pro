@@ -1,6 +1,7 @@
 package com.archiaipro
 
 import android.content.Intent
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -150,7 +151,7 @@ fun ArchiAIApp() {
                     page = if (activeProject != null) "پرونده پروژه" else "خانه"
                 }
                 "دستیار هوشمند" -> AssistantScreen { page = "خانه" }
-                else -> DashboardScreen(projects.size) { page = it }
+                else -> DashboardScreen(projects.size, language) { page = it }
             }
         }
     }
@@ -168,7 +169,9 @@ private fun PageFrame(title: String, onBack: () -> Unit, content: @Composable Co
 }
 
 @Composable
-fun DashboardScreen(projectCount: Int, onOpen: (String) -> Unit) {
+fun DashboardScreen(projectCount: Int, language: String = "fa", onOpen: (String) -> Unit) {
+    val english = language == "en"
+    val arabic = language == "ar"
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column {
@@ -177,7 +180,7 @@ fun DashboardScreen(projectCount: Int, onOpen: (String) -> Unit) {
                     Spacer(Modifier.width(6.dp))
                     Text("PRO", color = Gold, fontWeight = FontWeight.Bold)
                 }
-                Text("استودیوی هوشمند معماری", color = Muted, fontSize = 12.sp)
+                Text(if (english) "Professional architecture studio" else if (arabic) "استوديو معماري احترافي" else "استودیوی هوشمند معماری", color = Muted, fontSize = 12.sp)
             }
             Surface(color = Navy, shape = RoundedCornerShape(15.dp), modifier = Modifier.size(52.dp)) {
                 Box(contentAlignment = Alignment.Center) { Text("A", color = Gold, fontSize = 29.sp, fontWeight = FontWeight.Bold) }
@@ -186,7 +189,7 @@ fun DashboardScreen(projectCount: Int, onOpen: (String) -> Unit) {
         Spacer(Modifier.height(22.dp))
         Surface(color = Navy, shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(22.dp)) {
-                Text("ایده را به طرح تبدیل کن", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text(if (english) "Turn ideas into projects" else if (arabic) "حوّل أفكارك إلى مشاريع" else "ایده را به پروژه تبدیل کن", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 Spacer(Modifier.height(8.dp))
                 Text("ابزارهای طراحی، محاسبه و مدیریت پروژه؛ با ذخیره‌سازی آفلاین روی دستگاه.", color = Color(0xFFD0D8E3), fontSize = 13.sp, lineHeight = 23.sp)
                 Spacer(Modifier.height(15.dp))
@@ -197,11 +200,11 @@ fun DashboardScreen(projectCount: Int, onOpen: (String) -> Unit) {
             }
         }
         Spacer(Modifier.height(24.dp))
-        Text("فضای کاری", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Ink)
+        Text(if (english) "Workspace" else if (arabic) "مساحة العمل" else "فضای کاری", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Ink)
         Spacer(Modifier.height(10.dp))
         CardAction("مدیریت پروژه‌ها", "ایجاد، ویرایش و نگهداری پروژه‌ها", "▤") { onOpen("مدیریت پروژه‌ها") }
         Spacer(Modifier.height(20.dp))
-        Text("ابزارهای تخصصی", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Ink)
+        Text(if (english) "Design tools" else if (arabic) "أدوات التصميم" else "ابزارهای تخصصی", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Ink)
         Spacer(Modifier.height(10.dp))
         val tools = listOf(
             "طراحی نمای سه‌بعدی" to "پیش‌نمایش نما و انتخاب متریال",
@@ -211,7 +214,8 @@ fun DashboardScreen(projectCount: Int, onOpen: (String) -> Unit) {
             "محاسبات مصالح" to "مقدار مصالح و پرت اجرا",
             "برآورد هزینه" to "محاسبه هزینه بر اساس نرخ ورودی",
             "گزارش و خروجی" to "ساخت گزارش قابل اشتراک",
-            "دستیار هوشمند" to "راهنمای مراحل طراحی"
+            "دستیار هوشمند" to "راهنمای مراحل طراحی",
+            "زبان برنامه" to "فارسی، عربی و انگلیسی"
         )
         tools.chunked(2).forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -660,6 +664,20 @@ private fun PdfReportScreen(projects: List<ProjectEntity>, onBack: () -> Unit) {
             Text("ساخت و اشتراک PDF")
         }
         Text("در حال حاضر گزارش شامل مشخصات اصلی پروژه‌هاست؛ نقشه‌ها و تصاویر طراحی در PDF قرار نمی‌گیرند.", color = Muted, fontSize = 11.sp)
+    }
+}
+
+@Composable
+private fun LanguageSettingsScreen(language: String, onSelect: (String) -> Unit, onBack: () -> Unit) {
+    PageFrame("زبان برنامه", onBack) {
+        Text("زبان صفحه اصلی برنامه را انتخاب کنید. انتخاب شما روی دستگاه ذخیره می‌شود.", color = Muted)
+        listOf("fa" to "فارسی", "ar" to "العربية", "en" to "English").forEach { pair ->
+            Row(Modifier.fillMaxWidth().clickable { onSelect(pair.first) }.padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = language == pair.first, onClick = { onSelect(pair.first) })
+                Text(pair.second, color = Ink)
+            }
+        }
+        Text("ترجمه صفحه اصلی فعال است؛ برخی فرم‌ها و ابزارهای تخصصی هنوز فارسی هستند.", color = Muted, fontSize = 11.sp)
     }
 }
 
