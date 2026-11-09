@@ -2,7 +2,6 @@ package com.archiaipro
 
 import android.content.Intent
 import android.content.Context
-import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -77,9 +76,13 @@ fun ArchiAIApp() {
     val facadeDesign by designDao.observe(designId, "facade").collectAsState(initial = null)
     val interiorDesign by designDao.observe(designId, "interior").collectAsState(initial = null)
 
-    MaterialTheme(colorScheme = lightColorScheme(
-        primary = Navy, secondary = Gold, background = Background, surface = Color.White
-    )) {
+    CompositionLocalProvider(
+        androidx.compose.ui.platform.LocalLayoutDirection provides
+            if (language == "en") androidx.compose.ui.unit.LayoutDirection.Ltr else androidx.compose.ui.unit.LayoutDirection.Rtl
+    ) {
+        MaterialTheme(colorScheme = lightColorScheme(
+            primary = Navy, secondary = Gold, background = Background, surface = Color.White
+        )) {
         Surface(Modifier.fillMaxSize(), color = Background) {
             when (page) {
                 "خانه" -> DashboardScreen(projects.size, language) { destination ->
@@ -174,6 +177,7 @@ fun ArchiAIApp() {
             }
         }
     }
+    }
 }
 
 @Composable
@@ -210,10 +214,10 @@ fun DashboardScreen(projectCount: Int, language: String = "fa", onOpen: (String)
             Column(Modifier.padding(22.dp)) {
                 Text(if (english) "Turn ideas into projects" else if (arabic) "حوّل أفكارك إلى مشاريع" else "ایده را به پروژه تبدیل کن", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 Spacer(Modifier.height(8.dp))
-                Text("ابزارهای طراحی، محاسبه و مدیریت پروژه؛ با ذخیره‌سازی آفلاین روی دستگاه.", color = Color(0xFFD0D8E3), fontSize = 13.sp, lineHeight = 23.sp)
+                Text(if (english) "Design, calculate and manage projects. Core tools work offline and data stays on this device." else if (arabic) "صمّم واحسب وأدر مشاريعك. تعمل الأدوات الأساسية دون إنترنت وتبقى البيانات على الجهاز." else "ابزارهای طراحی، محاسبه و مدیریت پروژه؛ با ذخیره‌سازی آفلاین روی دستگاه.", color = Color(0xFFD0D8E3), fontSize = 13.sp, lineHeight = 23.sp)
                 Spacer(Modifier.height(15.dp))
                 Button(onClick = { onOpen("مدیریت پروژه‌ها") }, colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Navy)) {
-                    Text("مدیریت پروژه‌ها  •  $projectCount", fontWeight = FontWeight.Bold)
+                    Text(if (english) "My projects • $projectCount" else if (arabic) "مشاريعي • $projectCount" else "مدیریت پروژه‌ها  •  $projectCount", fontWeight = FontWeight.Bold)
                 }
                 Text("OFFLINE WORKSPACE", color = Gold, fontSize = 9.sp, fontWeight = FontWeight.Bold)
             }
@@ -225,22 +229,48 @@ fun DashboardScreen(projectCount: Int, language: String = "fa", onOpen: (String)
         Spacer(Modifier.height(20.dp))
         Text(if (english) "Design tools" else if (arabic) "أدوات التصميم" else "ابزارهای تخصصی", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Ink)
         Spacer(Modifier.height(10.dp))
-        val tools = listOf(
-            "طراحی نمای سه‌بعدی" to "پیش‌نمایش نما و انتخاب متریال",
-            "طراحی داخلی" to "چیدمان اولیه فضای داخلی",
-            "کتابخانه متریال" to "مرجع متریال‌های ساختمانی",
-            "پلان و اندازه‌گذاری" to "ابعاد و محاسبه مساحت فضا",
-            "محاسبات مصالح" to "مقدار مصالح و پرت اجرا",
-            "برآورد هزینه" to "محاسبه هزینه بر اساس نرخ ورودی",
-            "گزارش و خروجی" to "ساخت گزارش قابل اشتراک",
-            "دستیار هوشمند" to "راهنمای مراحل طراحی",
-            "زبان برنامه" to "فارسی، عربی و انگلیسی",
-            "پشتیبان‌گیری" to "خروجی و بازیابی فایل پروژه"
-        )
+        val tools = when (language) {
+            "en" -> listOf(
+                Triple("3D facade", "Interactive rotatable building model", "طراحی نمای سه‌بعدی"),
+                Triple("Interior design", "Room finishes and palette", "طراحی داخلی"),
+                Triple("Materials library", "Stone, wood, glass and metal", "کتابخانه متریال"),
+                Triple("2D floor plan", "Draw walls, doors and windows", "پلان و اندازه‌گذاری"),
+                Triple("Material calculator", "Area and waste calculation", "محاسبات مصالح"),
+                Triple("Cost estimate", "Quantity and unit rate", "برآورد هزینه"),
+                Triple("PDF reports", "Export project summaries", "گزارش و خروجی"),
+                Triple("Architecture guide", "Offline design guidance", "دستیار هوشمند"),
+                Triple("Language", "Persian, Arabic and English", "زبان برنامه"),
+                Triple("Backup and restore", "Export or restore project data", "پشتیبان‌گیری")
+            )
+            "ar" -> listOf(
+                Triple("واجهة ثلاثية الأبعاد", "نموذج مبنى قابل للدوران", "طراحی نمای سه‌بعدی"),
+                Triple("التصميم الداخلي", "تشطيبات وألوان الغرف", "طراحی داخلی"),
+                Triple("مكتبة المواد", "حجر وخشب وزجاج ومعدن", "کتابخانه متریال"),
+                Triple("مخطط ثنائي الأبعاد", "الجدران والأبواب والنوافذ", "پلان و اندازه‌گذاری"),
+                Triple("حساب المواد", "حساب المساحة والهدر", "محاسبات مصالح"),
+                Triple("تقدير التكلفة", "الكمية وسعر الوحدة", "برآورد هزینه"),
+                Triple("تقارير PDF", "تصدير ملخصات المشاريع", "گزارش و خروجی"),
+                Triple("دليل معماري", "إرشادات تصميم دون إنترنت", "دستیار هوشمند"),
+                Triple("اللغة", "الفارسية والعربية والإنجليزية", "زبان برنامه"),
+                Triple("النسخ الاحتياطي", "تصدير واستعادة المشاريع", "پشتیبان‌گیری")
+            )
+            else -> listOf(
+                Triple("طراحی نمای سه‌بعدی", "مدل تعاملی و قابل چرخش ساختمان", "طراحی نمای سه‌بعدی"),
+                Triple("طراحی داخلی", "رنگ و پوشش فضای اتاق‌ها", "طراحی داخلی"),
+                Triple("کتابخانه متریال", "سنگ، چوب، شیشه و فلز", "کتابخانه متریال"),
+                Triple("پلان دوبعدی", "ترسیم دیوار، در و پنجره", "پلان و اندازه‌گذاری"),
+                Triple("محاسبات مصالح", "محاسبه مساحت و پرت", "محاسبات مصالح"),
+                Triple("برآورد هزینه", "مقدار مصالح و قیمت واحد", "برآورد هزینه"),
+                Triple("گزارش PDF", "خروجی پرونده پروژه‌ها", "گزارش و خروجی"),
+                Triple("راهنمای معماری", "راهنمای طراحی آفلاین", "دستیار هوشمند"),
+                Triple("زبان برنامه", "فارسی، عربی و انگلیسی", "زبان برنامه"),
+                Triple("پشتیبان‌گیری", "خروجی و بازیابی اطلاعات پروژه", "پشتیبان‌گیری")
+            )
+        }
         tools.chunked(2).forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 row.forEach { item ->
-                    Surface(color = Color.White, shape = RoundedCornerShape(17.dp), modifier = Modifier.weight(1f).height(116.dp).clickable { onOpen(item.first) }) {
+                    Surface(color = Color.White, shape = RoundedCornerShape(17.dp), modifier = Modifier.weight(1f).height(116.dp).clickable { onOpen(item.third) }) {
                         Column(Modifier.padding(13.dp)) {
                             Text("◇", color = Gold, fontSize = 24.sp)
                             Text(item.first, color = Ink, fontWeight = FontWeight.Bold, fontSize = 12.sp)
